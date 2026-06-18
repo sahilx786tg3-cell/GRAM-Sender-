@@ -11,10 +11,10 @@ ADMIN_ID = 6520878121
 TONCENTER = "https://toncenter.com/api/v2"
 TONCENTER_API_KEY = "73f3d7b1bf8117d8d2e2a9cf32b8c9f7d0cee9664908efbeaeee7d37c16f6fd4"
 
+bot = telebot.TeleBot(BOT_TOKEN)
 
 def get_headers():
     return {"X-API-Key": TONCENTER_API_KEY}
-
 
 def get_wallet():
     pub_k, priv_k = mnemonic_to_wallet_key(MNEMONIC)
@@ -22,46 +22,32 @@ def get_wallet():
     addr = wallet.address.to_string(True, True, True)
     return addr, wallet
 
-
 def get_seqno(address):
     try:
         r = requests.get(
             f"{TONCENTER}/runGetMethod",
             params={"address": address, "method": "seqno", "stack": "[]"},
-            headers=get_headers(),
-            timeout=10
+            headers=get_headers(), timeout=10
         ).json()
-        print(f"[SEQNO] {r}")
         stack = r.get("result", {}).get("stack", [])
-        if stack:
-            return int(stack[0][1], 16)
+        return int(stack[0][1], 16) if stack else 0
+    except:
         return 0
-    except Exception as e:
-        print(f"[SEQNO ERROR] {e}")
-        return 0
-
 
 def get_balance(address):
     try:
         r = requests.get(
             f"{TONCENTER}/getAddressInformation",
             params={"address": address},
-            headers=get_headers(),
-            timeout=10
+            headers=get_headers(), timeout=10
         ).json()
-        print(f"[BALANCE] {r}")
-        balance_nano = int(r["result"]["balance"])
-        return balance_nano / 1e9
-    except Exception as e:
-        print(f"[BALANCE ERROR] {e}")
+        return int(r["result"]["balance"]) / 1e9
+    except:
         return None
-
 
 def send_ton(to_address, amount_ton):
     addr, wallet = get_wallet()
     seqno = get_seqno(addr)
-    print(f"[SEND] From: {addr} | To: {to_address} | Amount: {amount_ton} | Seqno: {seqno}")
-
     query = wallet.create_transfer_message(
         to_addr=to_address,
         amount=to_nano(amount_ton, "ton"),
@@ -69,17 +55,13 @@ def send_ton(to_address, amount_ton):
         send_mode=3,
         payload=""
     )
-
     boc = bytes_to_b64str(query["message"].to_boc(False))
     r = requests.post(
         f"{TONCENTER}/sendBoc",
         json={"boc": boc},
-        headers=get_headers(),
-        timeout=15
+        headers=get_headers(), timeout=15
     ).json()
-    print(f"[SENDBOC] {r}")
     return r
-
 
 def get_last_tx_hash(address):
     time.sleep(15)
@@ -87,94 +69,77 @@ def get_last_tx_hash(address):
         r = requests.get(
             f"{TONCENTER}/getTransactions",
             params={"address": address, "limit": 5},
-            headers=get_headers(),
-            timeout=10
+            headers=get_headers(), timeout=10
         ).json()
         for tx in r.get("result", []):
             if tx.get("out_msgs") and len(tx["out_msgs"]) > 0:
                 return tx["transaction_id"]["hash"]
-    except Exception as e:
-        print(f"[HASH ERROR] {e}")
+    except:
+        pass
     return None
 
-
-bot = telebot.TeleBot(BOT_TOKEN)
-
-
-@bot.message_handler(func=lambda message: True, content_types=["text"])
+@bot.message_handler(func=lambda m: True, content_types=["text"])
 def handle_all(message):
     user_id = message.from_user.id
-    # ✅ lowercase everything so /Balance /BALANCE all work
-    text = message.text.strip().lower()
-    original_text = message.text.strip()
-    print(f"[MSG] From: {user_id} | Text: {original_text}")
-
-    # /myid — anyone can use
-    if text == "/myid":
-        bot.reply_to(message, f"Your Telegram ID: `{user_id}`", parse_mode="Markdown")
-        return
-
-    # /myaddress
-    if text == "/myaddress":
-        if user_id != ADMIN_ID:
-            bot.reply_to(message, "Only Admin can use this.")
-            return
-        addr, _ = get_wallet()
-        bot.reply_to(message, f"Wallet Address:\n`{addr}`", parse_mode="Markdown")
-        return
+    text = message.text.strip()
+    lower = text.lower()
 
     # /balance
-    if text == "/balance":
+    if lower == "/balance":
         if user_id != ADMIN_ID:
             bot.reply_to(message, "Only Admin can use this.")
             return
         addr, _ = get_wallet()
         balance = get_balance(addr)
         if balance is not None:
-            bot.reply_to(
-                message,
-                f"Wallet Balance: `{balance:.4f} TON`\n\nAddress:\n`{addr}`",
-                parse_mode="Markdown"
-            )
+            bot.reply_to(message, f"Wallet Balance: `{balance:.4f} TON`\n\nAddress:\n`{addr}`", parse_mode="Markdown")
         else:
-            bot.reply_to(message, "Failed to fetch balance. Check terminal.")
+            bot.reply_to(message, "Failed to fetch balance.")
         return
 
-    # /send — use original_text to preserve address case
-    if text.startswith("/send"):
+    # /send - reply karke use karo
+    if lower.startswith("/send"):
         if user_id != ADMIN_ID:
             bot.reply_to(message, "Only Admin can send.")
             return
 
-        parts = original_text.split()
-        if len(parts) != 3:
-            bot.reply_to(message, "Format: /send <amount> <address>\nExample: /send 0.1 UQB9...")
+        # Amount lo
+        parts = text.split()
+        if len(parts) != 2:
+            bot.reply_to(message, "Format: /send <amount>\nReply karke user ke address message pe!")
             return
 
         try:
             amount = float(parts[1])
-            address = parts[2]
-        except ValueError:
-            bot.reply_to(message, "Invalid amount. Example: /send 0.1 UQB9...")
+        except:
+            bot.reply_to(message, "Invalid amount. Example: /send 0.1")
             return
 
-        if amount <= 0:
-            bot.reply_to(message, "Amount must be greater than 0.")
+        # Reply check karo
+        if not message.reply_to_message:
+            bot.reply_to(message, "⚠️ User ke TON address wale message pe reply karke /send karo!")
+            return
+
+        # Us message se address uthao
+        replied_text = message.reply_to_message.text.strip() if message.reply_to_message.text else ""
+        to_address = replied_text.strip()
+
+        if not to_address or len(to_address) < 20:
+            bot.reply_to(message, "❌ Valid TON address nahi mila us message mein!")
             return
 
         status_msg = bot.reply_to(
             message,
-            f"Sending {amount} TON to\n`{address}`...",
+            f"⏳ Sending {amount} TON to `{to_address}`...",
             parse_mode="Markdown"
         )
 
         try:
-            result = send_ton(address, amount)
-
+            result = send_ton(to_address, amount)
             if not result.get("ok"):
                 error = result.get("error", "Unknown error")
                 bot.edit_message_text(
-                    f"Transaction Failed!\nReason: {error}",
+                    f"❌ Transaction Failed!\nReason: {error}",
                     chat_id=status_msg.chat.id,
                     message_id=status_msg.message_id
                 )
@@ -184,27 +149,36 @@ def handle_all(message):
             tx_hash = get_last_tx_hash(addr)
 
             if tx_hash:
+                tx_url = f"https://tonviewer.com/transaction/{tx_hash}"
                 bot.edit_message_text(
-                    f"{amount} TON Sent!\n\nTransaction:\nhttps://tonviewer.com/transaction/{tx_hash}",
+                    f"✅ {amount} TON Sent Successfully!\n\n"
+                    f"💰 Amount: {amount} TON\n"
+                    f"📬 To: `{to_address}`\n"
+                    f"🧾 Status: Success\n\n"
+                    f"[🔍 View on Explorer]({tx_url})\n\n"
+                    f"🤖 Bot: @GramSenderAiBot",
                     chat_id=status_msg.chat.id,
-                    message_id=status_msg.message_id
+                    message_id=status_msg.message_id,
+                    parse_mode="Markdown"
                 )
             else:
                 bot.edit_message_text(
-                    f"{amount} TON Sent!\n\nCheck wallet:\nhttps://tonviewer.com/{addr}",
+                    f"✅ {amount} TON Sent!\n\n"
+                    f"💰 Amount: {amount} TON\n"
+                    f"📬 To: `{to_address}`\n\n"
+                    f"[🔍 View on Explorer](https://tonviewer.com/{addr})\n\n"
+                    f"🤖 Bot: @GramSenderAiBot",
                     chat_id=status_msg.chat.id,
-                    message_id=status_msg.message_id
+                    message_id=status_msg.message_id,
+                    parse_mode="Markdown"
                 )
-
         except Exception as e:
-            print(f"[SEND ERROR] {e}")
             bot.edit_message_text(
-                f"Error: {str(e)}",
+                f"❌ Error: {str(e)}",
                 chat_id=status_msg.chat.id,
                 message_id=status_msg.message_id
             )
         return
-
 
 print("Bot is running...")
 bot.polling(none_stop=True)
