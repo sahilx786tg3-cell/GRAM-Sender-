@@ -1,45 +1,48 @@
 import telebot
 import requests
 import time
-import asyncio
 import base64
-from pytoniq import LiteBalancer, WalletV4R2
+from tonsdk.crypto import mnemonic_to_wallet_key
+from tonsdk.contract.wallet import WalletV4ContractR2
+from tonsdk.utils import to_nano, bytes_to_b64str
 
 BOT_TOKEN = "8532448307:AAHnURBUFaBTPxvPT8W6h8rLw_kKGjgRTe4"
 MNEMONIC = "endless woman interest senior inner arrive educate stage talk throw useful sphere ranch urban list above plate join glare peace borrow buyer armed shift".split()
 ADMIN_ID = 6520878121
 WALLET_ADDRESS = "EQBs2e9qbnIwREgnRtjg1zLiMv9tlCQGzYZ7Eq66ChGMz3M-"
+TONCENTER = "https://toncenter.com/api/v2"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-async def send_ton_async(to_address, amount_ton):
-    provider = LiteBalancer.from_mainnet_config(trust_level=1)
-    await provider.start_up()
-    wallet = await WalletV4R2.from_mnemonic(provider, MNEMONIC)
-    result = await wallet.transfer(
-        to_address,
-        amount=int(amount_ton * 1e9),
-        body=""
-    )
-    await provider.close_all()
-    return result
-
-def run_async(coro):
+def get_seqno(address):
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        return loop.run_until_complete(coro)
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        return loop.run_until_complete(coro)
+        r = requests.get(
+            f"{TONCENTER}/getExtendedAddressInformation",
+            params={"address": address},
+            timeout=10
+        ).json()
+        seqno = r["result"]["account_state"].get("seqno", 0)
+        print(f"[SEQNO] {seqno}")
+        return int(seqno)
+    except Exception as e:
+        print(f"[SEQNO ERROR] {e}")
+        return 0
+
+def get_balance():
+    try:
+        r = requests.get(
+            f"{TONCENTER}/getAddressInformation",
+            params={"address": WALLET_ADDRESS},
+            timeout=10
+        ).json()
+        return int(r["result"]["balance"]) / 1e9
+    except:
+        return None
 
 def get_tx_hash():
     try:
         r = requests.get(
-            "https://toncenter.com/api/v2/getTransactions",
+            f"{TONCENTER}/getTransactions",
             params={"address": WALLET_ADDRESS, "limit": 5},
             timeout=10
         ).json()
@@ -47,16 +50,41 @@ def get_tx_hash():
             if tx.get("out_msgs") and len(tx["out_msgs"]) > 0:
                 raw_hash = tx["transaction_id"]["hash"]
                 decoded = base64.b64decode(raw_hash)
-                hex_hash = decoded.hex().upper()
-                return hex_hash
+                return decoded.hex().upper()
     except Exception as e:
         print(f"[HASH ERROR] {e}")
     return None
 
+def send_ton(to_address, amount_ton):
+    pub_k, priv_k = mnemonic_to_wallet_key(MNEMONIC)
+    wallet = WalletV4ContractR2(public_key=pub_k, private_key=priv_k)
+    seqno = get_seqno(WALLET_ADDRESS)
+    query = wallet.create_transfer_message(
+        to_addr=to_address,
+        amount=to_nano(amount_ton, "ton"),
+        seqno=seqno,
+        send_mode=3
+    )
+    boc = bytes_to_b64str(query["message"].to_boc(False))
+    r = requests.post(
+        f"{TONCENTER}/sendBoc",
+        json={"boc": boc},
+        timeout=15
+    ).json()
+    print(f"[SENDBOC] {r}")
+    return r
+
 def do_send(message, amount, to_address):
     status_msg = bot.reply_to(message, f"⏳ Sending {amount} TON...")
     try:
-        run_async(send_ton_async(to_address, amount))
+        result = send_ton(to_address, amount)
+        if not result.get("ok"):
+            bot.edit_message_text(
+                f"❌ Transaction Failed!\nReason: {result.get('error', 'Unknown')}",
+                chat_id=status_msg.chat.id,
+                message_id=status_msg.message_id
+            )
+            return
         time.sleep(15)
         tx_hash = get_tx_hash()
         if tx_hash:
@@ -75,7 +103,6 @@ def do_send(message, amount, to_address):
             parse_mode="Markdown"
         )
     except Exception as e:
-        print(f"[SEND ERROR] {e}")
         bot.edit_message_text(
             f"❌ Error: {str(e)}",
             chat_id=status_msg.chat.id,
@@ -92,20 +119,13 @@ def handle_all(message):
         if user_id != ADMIN_ID:
             bot.reply_to(message, "Only Admin can use this.")
             return
-        try:
-            r = requests.get(
-                "https://toncenter.com/api/v2/getAddressInformation",
-                params={"address": WALLET_ADDRESS},
-                timeout=10
-            ).json()
-            balance = int(r["result"]["balance"]) / 1e9
-            bot.reply_to(
-                message,
+        balance = get_balance()
+        if balance is not None:
+            bot.reply_to(message,
                 f"💰 Balance: `{balance:.4f} TON`\n\nAddress:\n`{WALLET_ADDRESS}`",
-                parse_mode="Markdown"
-            )
-        except:
-            bot.reply_to(message, f"Check manually:\nhttps://tonviewer.com/{WALLET_ADDRESS}")
+                parse_mode="Markdown")
+        else:
+            bot.reply_to(message, f"Check:\nhttps://tonviewer.com/{WALLET_ADDRESS}")
         return
 
     if lower.startswith("/send"):
