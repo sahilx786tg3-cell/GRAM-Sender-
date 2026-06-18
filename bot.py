@@ -4,8 +4,9 @@ from tonsdk.contract.wallet import Wallets, WalletVersionEnum
 from tonsdk.utils import to_nano
 from tonsdk.provider import ToncenterClient
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-MNEMONIC = os.environ.get("MNEMONIC").split()
+BOT_TOKEN = "8532448307:AAG3ASGbyURZ1CSWnlNOD9HpWtdU5zfPIn8"
+MNEMONIC = "endless woman interest senior inner arrive educate stage talk throw useful sphere ranch urban list above plate join glare peace borrow buyer armed shift".split()
+ADMIN_ID = 6520878121
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -27,11 +28,9 @@ def send_ton(to_address, amount_ton):
 
 @bot.message_handler(commands=['send'])
 def handle_send(message):
-    chat_id = message.chat.id
     user_id = message.from_user.id
-    admins = [a.user.id for a in bot.get_chat_administrators(chat_id)]
-    if user_id not in admins:
-        bot.reply_to(message, "❌ Sirf admins send kar sakte hain!")
+    if user_id != ADMIN_ID:
+        bot.reply_to(message, "❌ Sirf Admin send kar sakta hai!")
         return
     parts = message.text.split()
     if len(parts) != 3:
@@ -39,7 +38,7 @@ def handle_send(message):
         return
     amount = float(parts[1])
     address = parts[2]
-    bot.reply_to(message, f"⏳ {amount} TON bhej raha hun...")
+    bot.reply_to(message, f"⏳ {amount} TON bhej raha hun {address} ko...")
     try:
         send_ton(address, amount)
         bot.reply_to(message, f"✅ {amount} TON successfully bheja!")
