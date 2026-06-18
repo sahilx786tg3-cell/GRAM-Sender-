@@ -14,6 +14,9 @@ TONCENTER = "https://toncenter.com/api/v2"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
+# Double send rokne ke liye
+processing = False
+
 def get_seqno(address):
     try:
         r = requests.get(
@@ -22,7 +25,6 @@ def get_seqno(address):
             timeout=10
         ).json()
         seqno = r["result"]["account_state"].get("seqno", 0)
-        print(f"[SEQNO] {seqno}")
         return int(seqno)
     except Exception as e:
         print(f"[SEQNO ERROR] {e}")
@@ -75,7 +77,32 @@ def send_ton(to_address, amount_ton):
     return r
 
 def do_send(message, amount, to_address):
+    global processing
+
+    # Double send check
+    if processing:
+        bot.reply_to(message, "⏳ Ek transaction already chal rahi hai, wait karo!")
+        return
+
+    # Balance check
+    balance = get_balance()
+    if balance is None:
+        bot.reply_to(message, "❌ Balance check failed! Try again.")
+        return
+
+    if balance < amount + 0.01:
+        bot.reply_to(message,
+            f"❌ Insufficient Balance!\n\n"
+            f"💰 Available: `{balance:.4f} TON`\n"
+            f"💸 Required: `{amount + 0.01:.4f} TON` (including fees)\n\n"
+            f"Please add more TON to wallet!",
+            parse_mode="Markdown"
+        )
+        return
+
+    processing = True
     status_msg = bot.reply_to(message, f"⏳ Sending {amount} TON...")
+
     try:
         result = send_ton(to_address, amount)
         if not result.get("ok"):
@@ -84,13 +111,16 @@ def do_send(message, amount, to_address):
                 chat_id=status_msg.chat.id,
                 message_id=status_msg.message_id
             )
+            processing = False
             return
+
         time.sleep(15)
         tx_hash = get_tx_hash()
         if tx_hash:
             tx_url = f"https://tonviewer.com/transaction/{tx_hash}"
         else:
             tx_url = f"https://tonviewer.com/{WALLET_ADDRESS}"
+
         bot.edit_message_text(
             f"✅ {amount} TON Sent Successfully!\n\n"
             f"💰 Amount: {amount} TON\n"
@@ -108,6 +138,8 @@ def do_send(message, amount, to_address):
             chat_id=status_msg.chat.id,
             message_id=status_msg.message_id
         )
+    finally:
+        processing = False
 
 @bot.message_handler(func=lambda m: True, content_types=["text"])
 def handle_all(message):
@@ -159,4 +191,4 @@ def handle_all(message):
         return
 
 print("Bot is running...")
-bot.polling(none_stop=True)
+bot.polling(none_stop=True, interval=0)
