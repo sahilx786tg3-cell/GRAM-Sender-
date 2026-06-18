@@ -13,18 +13,18 @@ WALLET_ADDRESS = "EQBs2e9qbnIwREgnRtjg1zLiMv9tlCQGzYZ7Eq66ChGMz3M-"
 TONCENTER = "https://toncenter.com/api/v2"
 
 bot = telebot.TeleBot(BOT_TOKEN)
-
-# Double send rokne ke liye
 processing = False
 
 def get_seqno(address):
     try:
         r = requests.get(
-            f"{TONCENTER}/getExtendedAddressInformation",
+            f"{TONCENTER}/getWalletInformation",
             params={"address": address},
             timeout=10
         ).json()
-        seqno = r["result"]["account_state"].get("seqno", 0)
+        print(f"[WALLET INFO] {r}")
+        seqno = r["result"].get("seqno", 0)
+        print(f"[SEQNO] {seqno}")
         return int(seqno)
     except Exception as e:
         print(f"[SEQNO ERROR] {e}")
@@ -78,13 +78,10 @@ def send_ton(to_address, amount_ton):
 
 def do_send(message, amount, to_address):
     global processing
-
-    # Double send check
     if processing:
-        bot.reply_to(message, "⏳ Ek transaction already chal rahi hai, wait karo!")
+        bot.reply_to(message, "⏳ Ek transaction chal rahi hai, wait karo!")
         return
 
-    # Balance check
     balance = get_balance()
     if balance is None:
         bot.reply_to(message, "❌ Balance check failed! Try again.")
@@ -102,7 +99,6 @@ def do_send(message, amount, to_address):
 
     processing = True
     status_msg = bot.reply_to(message, f"⏳ Sending {amount} TON...")
-
     try:
         result = send_ton(to_address, amount)
         if not result.get("ok"):
