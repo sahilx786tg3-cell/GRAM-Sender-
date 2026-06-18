@@ -2,6 +2,7 @@ import telebot
 import requests
 import time
 import asyncio
+import base64
 from pytoniq import LiteBalancer, WalletV4R2
 
 BOT_TOKEN = "8532448307:AAHnURBUFaBTPxvPT8W6h8rLw_kKGjgRTe4"
@@ -15,8 +16,25 @@ async def send_ton_async(to_address, amount_ton):
     provider = LiteBalancer.from_mainnet_config(trust_level=1)
     await provider.start_up()
     wallet = await WalletV4R2.from_mnemonic(provider, MNEMONIC)
-    await wallet.transfer(to_address, amount=int(amount_ton * 1e9), body="")
+    result = await wallet.transfer(
+        to_address,
+        amount=int(amount_ton * 1e9),
+        body=""
+    )
     await provider.close_all()
+    return result
+
+def run_async(coro):
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        return loop.run_until_complete(coro)
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        return loop.run_until_complete(coro)
 
 def get_tx_hash():
     try:
@@ -27,15 +45,18 @@ def get_tx_hash():
         ).json()
         for tx in r.get("result", []):
             if tx.get("out_msgs") and len(tx["out_msgs"]) > 0:
-                return tx["transaction_id"]["hash"]
-    except:
-        pass
+                raw_hash = tx["transaction_id"]["hash"]
+                decoded = base64.b64decode(raw_hash)
+                hex_hash = decoded.hex().upper()
+                return hex_hash
+    except Exception as e:
+        print(f"[HASH ERROR] {e}")
     return None
 
 def do_send(message, amount, to_address):
     status_msg = bot.reply_to(message, f"⏳ Sending {amount} TON...")
     try:
-        asyncio.run(send_ton_async(to_address, amount))
+        run_async(send_ton_async(to_address, amount))
         time.sleep(15)
         tx_hash = get_tx_hash()
         if tx_hash:
@@ -54,6 +75,7 @@ def do_send(message, amount, to_address):
             parse_mode="Markdown"
         )
     except Exception as e:
+        print(f"[SEND ERROR] {e}")
         bot.edit_message_text(
             f"❌ Error: {str(e)}",
             chat_id=status_msg.chat.id,
