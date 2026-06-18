@@ -1,35 +1,39 @@
-import os
 import telebot
-from tonsdk.contract.wallet import Wallets, WalletVersionEnum
-from tonsdk.utils import to_nano
-from tonsdk.provider import ToncenterClient
+import requests
+from tonsdk.crypto import mnemonic_to_wallet_key
+from tonsdk.contract.wallet import WalletV4ContractR2
+from tonsdk.utils import to_nano, bytes_to_b64str
+import base64
 
 BOT_TOKEN = "8532448307:AAG3ASGbyURZ1CSWnlNOD9HpWtdU5zfPIn8"
 MNEMONIC = "endless woman interest senior inner arrive educate stage talk throw useful sphere ranch urban list above plate join glare peace borrow buyer armed shift".split()
 ADMIN_ID = 6520878121
+TONCENTER = "https://toncenter.com/api/v2"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
+def get_seqno(address):
+    r = requests.get(f"{TONCENTER}/runGetMethod", params={
+        "address": address, "method": "seqno", "stack": "[]"
+    }).json()
+    return int(r["result"]["stack"][0][1], 16)
+
 def send_ton(to_address, amount_ton):
-    client = ToncenterClient(base_url="https://toncenter.com/api/v2/", api_key="")
-    mnemonics, pub_k, priv_k, wallet = Wallets.from_mnemonics(
-        MNEMONIC, WalletVersionEnum.v4r2, workchain=0
-    )
-    seqno = client.run_get_method(
-        address=wallet.address.to_string(True, True, True),
-        method="seqno", stack_data=[]
-    )
+    pub_k, priv_k = mnemonic_to_wallet_key(MNEMONIC)
+    wallet = WalletV4ContractR2(public_key=pub_k, private_key=priv_k)
+    addr = wallet.address.to_string(True, True, True)
+    seqno = get_seqno(addr)
     query = wallet.create_transfer_message(
         to_addr=to_address,
         amount=to_nano(amount_ton, "ton"),
-        seqno=int(seqno["stack"][0][1], 16)
+        seqno=seqno
     )
-    client.raw_send_message(query["message"].to_boc(False))
+    boc = bytes_to_b64str(query["message"].to_boc(False))
+    requests.post(f"{TONCENTER}/sendBoc", json={"boc": boc})
 
 @bot.message_handler(commands=['send'])
 def handle_send(message):
-    user_id = message.from_user.id
-    if user_id != ADMIN_ID:
+    if message.from_user.id != ADMIN_ID:
         bot.reply_to(message, "❌ Sirf Admin send kar sakta hai!")
         return
     parts = message.text.split()
@@ -38,10 +42,10 @@ def handle_send(message):
         return
     amount = float(parts[1])
     address = parts[2]
-    bot.reply_to(message, f"⏳ {amount} TON bhej raha hun {address} ko...")
+    bot.reply_to(message, f"⏳ {amount} TON bhej raha hun...")
     try:
         send_ton(address, amount)
-        bot.reply_to(message, f"✅ {amount} TON successfully bheja!")
+        bot.reply_to(message, f"✅ {amount} TON bhej diya!")
     except Exception as e:
         bot.reply_to(message, f"❌ Error: {str(e)}")
 
