@@ -6,7 +6,7 @@ from tonsdk.crypto import mnemonic_to_wallet_key
 from tonsdk.contract.wallet import WalletV4ContractR2
 from tonsdk.utils import to_nano, bytes_to_b64str
 
-BOT_TOKEN = "8532448307:AAHnURBUFaBTPxvPT8W6h8rLw_kKGjgRTe4"
+BOT_TOKEN = "8532448307:AAFrBbTkMTHQzXjQAxbGWa_in7rdr_F9hkI"
 MNEMONIC = "endless woman interest senior inner arrive educate stage talk throw useful sphere ranch urban list above plate join glare peace borrow buyer armed shift".split()
 ADMIN_ID = 6520878121
 WALLET_ADDRESS = "EQBs2e9qbnIwREgnRtjg1zLiMv9tlCQGzYZ7Eq66ChGMz3M-"
