@@ -7,6 +7,7 @@ from pytoniq import LiteBalancer, WalletV4R2
 BOT_TOKEN = "8532448307:AAEkFjTBmGU_WdSY-lrEFi-zpHWBJvi_pWA"
 MNEMONIC = "endless woman interest senior inner arrive educate stage talk throw useful sphere ranch urban list above plate join glare peace borrow buyer armed shift".split()
 ADMIN_ID = 6520878121
+WALLET_ADDRESS = "EQBs2e9qbnIwREgnRtjg1zLiMv9tlCQGzYZ7Eq66ChGMz3M-"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -46,6 +47,26 @@ def handle_all(message):
     user_id = message.from_user.id
     text = message.text.strip()
     lower = text.lower()
+
+    if lower == "/balance":
+        if user_id != ADMIN_ID:
+            bot.reply_to(message, "Only Admin can use this.")
+            return
+        try:
+            r = requests.get(
+                f"https://toncenter.com/api/v2/getAddressInformation",
+                params={"address": WALLET_ADDRESS},
+                timeout=10
+            ).json()
+            balance = int(r["result"]["balance"]) / 1e9
+            bot.reply_to(
+                message,
+                f"💰 Balance: `{balance:.4f} TON`\n\nAddress:\n`{WALLET_ADDRESS}`",
+                parse_mode="Markdown"
+            )
+        except:
+            bot.reply_to(message, f"Check manually:\nhttps://tonviewer.com/{WALLET_ADDRESS}")
+        return
 
     if lower.startswith("/send"):
         if user_id != ADMIN_ID:
