@@ -30,8 +30,15 @@ def get_seqno(address):
             headers=get_headers(), timeout=10
         ).json()
         stack = r.get("result", {}).get("stack", [])
-        return int(stack[0][1], 16) if stack else 0
-    except:
+        if stack:
+            val = stack[0]
+            if isinstance(val, list):
+                return int(val[1], 16)
+            elif isinstance(val, dict):
+                return int(val.get("value", "0x0"), 16)
+        return 0
+    except Exception as e:
+        print(f"[SEQNO ERROR] {e}")
         return 0
 
 def get_balance(address):
@@ -48,6 +55,7 @@ def get_balance(address):
 def send_ton(to_address, amount_ton):
     addr, wallet = get_wallet()
     seqno = get_seqno(addr)
+    print(f"[SEND] seqno={seqno} to={to_address} amount={amount_ton}")
     query = wallet.create_transfer_message(
         to_addr=to_address,
         amount=to_nano(amount_ton, "ton"),
@@ -61,6 +69,7 @@ def send_ton(to_address, amount_ton):
         json={"boc": boc},
         headers=get_headers(), timeout=15
     ).json()
+    print(f"[SENDBOC] {r}")
     return r
 
 def get_last_tx_hash(address):
@@ -78,6 +87,55 @@ def get_last_tx_hash(address):
         pass
     return None
 
+def do_send(message, amount, to_address):
+    status_msg = bot.reply_to(
+        message,
+        f"⏳ Sending `{amount}` TON to\n`{to_address}`...",
+        parse_mode="Markdown"
+    )
+    try:
+        result = send_ton(to_address, amount)
+        if not result.get("ok"):
+            error = result.get("error", "Unknown error")
+            bot.edit_message_text(
+                f"❌ Transaction Failed!\nReason: {error}",
+                chat_id=status_msg.chat.id,
+                message_id=status_msg.message_id
+            )
+            return
+        addr, _ = get_wallet()
+        tx_hash = get_last_tx_hash(addr)
+        if tx_hash:
+            tx_url = f"https://tonviewer.com/transaction/{tx_hash}"
+            bot.edit_message_text(
+                f"✅ {amount} TON Sent Successfully!\n\n"
+                f"💰 Amount: {amount} TON\n"
+                f"📬 To: `{to_address}`\n"
+                f"🧾 Status: Success\n\n"
+                f"[🔍 View on Explorer]({tx_url})\n\n"
+                f"🤖 Bot: @GramSenderAiBot",
+                chat_id=status_msg.chat.id,
+                message_id=status_msg.message_id,
+                parse_mode="Markdown"
+            )
+        else:
+            bot.edit_message_text(
+                f"✅ {amount} TON Sent!\n\n"
+                f"💰 Amount: {amount} TON\n"
+                f"📬 To: `{to_address}`\n\n"
+                f"[🔍 View on Explorer](https://tonviewer.com/{addr})\n\n"
+                f"🤖 Bot: @GramSenderAiBot",
+                chat_id=status_msg.chat.id,
+                message_id=status_msg.message_id,
+                parse_mode="Markdown"
+            )
+    except Exception as e:
+        bot.edit_message_text(
+            f"❌ Error: {str(e)}",
+            chat_id=status_msg.chat.id,
+            message_id=status_msg.message_id
+        )
+
 @bot.message_handler(func=lambda m: True, content_types=["text"])
 def handle_all(message):
     user_id = message.from_user.id
@@ -92,92 +150,43 @@ def handle_all(message):
         addr, _ = get_wallet()
         balance = get_balance(addr)
         if balance is not None:
-            bot.reply_to(message, f"Wallet Balance: `{balance:.4f} TON`\n\nAddress:\n`{addr}`", parse_mode="Markdown")
+            bot.reply_to(message, f"💰 Wallet Balance: `{balance:.4f} TON`\n\nAddress:\n`{addr}`", parse_mode="Markdown")
         else:
             bot.reply_to(message, "Failed to fetch balance.")
         return
 
-    # /send - reply karke use karo
+    # /send
     if lower.startswith("/send"):
         if user_id != ADMIN_ID:
             bot.reply_to(message, "Only Admin can send.")
             return
 
-        # Amount lo
         parts = text.split()
-        if len(parts) != 2:
-            bot.reply_to(message, "Format: /send <amount>\nReply karke user ke address message pe!")
+
+        # Method 1: /send 0.1 <address> — seedha address
+        if len(parts) == 3:
+            try:
+                amount = float(parts[1])
+                to_address = parts[2]
+                do_send(message, amount, to_address)
+            except:
+                bot.reply_to(message, "Invalid format.\nMethod 1: /send 0.1 <address>\nMethod 2: Reply karke /send 0.1")
             return
 
-        try:
-            amount = float(parts[1])
-        except:
-            bot.reply_to(message, "Invalid amount. Example: /send 0.1")
-            return
-
-        # Reply check karo
-        if not message.reply_to_message:
-            bot.reply_to(message, "⚠️ User ke TON address wale message pe reply karke /send karo!")
-            return
-
-        # Us message se address uthao
-        replied_text = message.reply_to_message.text.strip() if message.reply_to_message.text else ""
-        to_address = replied_text.strip()
-
-        if not to_address or len(to_address) < 20:
-            bot.reply_to(message, "❌ Valid TON address nahi mila us message mein!")
-            return
-
-        status_msg = bot.reply_to(
-            message,
-            f"⏳ Sending {amount} TON to `{to_address}`...",
-            parse_mode="Markdown"
-        )
-
-        try:
-            result = send_ton(to_address, amount)
-            if not result.get("ok"):
-                error = result.get("error", "Unknown error")
-                bot.edit_message_text(
-                    f"❌ Transaction Failed!\nReason: {error}",
-                    chat_id=status_msg.chat.id,
-                    message_id=status_msg.message_id
-                )
+        # Method 2: /send 0.1 — reply karke
+        if len(parts) == 2:
+            if not message.reply_to_message or not message.reply_to_message.text:
+                bot.reply_to(message, "⚠️ Address wale message pe reply karke /send 0.1 likho!")
                 return
+            try:
+                amount = float(parts[1])
+                to_address = message.reply_to_message.text.strip()
+                do_send(message, amount, to_address)
+            except:
+                bot.reply_to(message, "Invalid amount. Example: /send 0.1")
+            return
 
-            addr, _ = get_wallet()
-            tx_hash = get_last_tx_hash(addr)
-
-            if tx_hash:
-                tx_url = f"https://tonviewer.com/transaction/{tx_hash}"
-                bot.edit_message_text(
-                    f"✅ {amount} TON Sent Successfully!\n\n"
-                    f"💰 Amount: {amount} TON\n"
-                    f"📬 To: `{to_address}`\n"
-                    f"🧾 Status: Success\n\n"
-                    f"[🔍 View on Explorer]({tx_url})\n\n"
-                    f"🤖 Bot: @GramSenderAiBot",
-                    chat_id=status_msg.chat.id,
-                    message_id=status_msg.message_id,
-                    parse_mode="Markdown"
-                )
-            else:
-                bot.edit_message_text(
-                    f"✅ {amount} TON Sent!\n\n"
-                    f"💰 Amount: {amount} TON\n"
-                    f"📬 To: `{to_address}`\n\n"
-                    f"[🔍 View on Explorer](https://tonviewer.com/{addr})\n\n"
-                    f"🤖 Bot: @GramSenderAiBot",
-                    chat_id=status_msg.chat.id,
-                    message_id=status_msg.message_id,
-                    parse_mode="Markdown"
-                )
-        except Exception as e:
-            bot.edit_message_text(
-                f"❌ Error: {str(e)}",
-                chat_id=status_msg.chat.id,
-                message_id=status_msg.message_id
-            )
+        bot.reply_to(message, "Format:\nMethod 1: /send 0.1 <address>\nMethod 2: Address pe reply karke /send 0.1")
         return
 
 print("Bot is running...")
