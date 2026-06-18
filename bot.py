@@ -66,7 +66,7 @@ def get_seqno():
             headers=get_headers(),
             timeout=10
         ).json()
-        print(f"[SEQNO RESPONSE] {r}")
+        print(f"[SEQNO] {r}")
         seqno = r["result"].get("seqno") or 0
         return int(seqno)
     except Exception as e:
@@ -75,10 +75,8 @@ def get_seqno():
 
 
 def deploy_wallet():
-    """Initialize/deploy wallet on blockchain for first time"""
-    addr, wallet, pub_k, priv_k = get_wallet()
+    addr, wallet, _, _ = get_wallet()
     try:
-        # Create init message to deploy contract
         query = wallet.create_init_external_message()
         boc = bytes_to_b64str(query["message"].to_boc(False))
         r = requests.post(
@@ -154,26 +152,22 @@ def do_send(message, amount, to_address):
         bot.reply_to(message, "Balance check failed! Try again.")
         return
 
-    if balance < amount + 0.05:
+    if balance < amount + 0.01:
         bot.reply_to(
             message,
             f"Insufficient Balance!\n\n"
             f"Available: `{balance:.4f} TON`\n"
-            f"Required: `{amount + 0.05:.4f} TON` (including fees)\n\n"
+            f"Required: `{amount + 0.01:.4f} TON` (including fees)\n\n"
             f"Add more TON to wallet first!",
             parse_mode="Markdown"
         )
         return
 
-    # Check wallet state before sending
     state = get_wallet_state()
     print(f"[STATE] {state}")
 
     if state == "uninitialized":
-        bot.reply_to(
-            message,
-            "Wallet not deployed yet!\nSend /deploy first, then try again."
-        )
+        bot.reply_to(message, "Wallet not deployed yet!\nSend /deploy first, then try again.")
         return
 
     processing = True
@@ -225,12 +219,10 @@ def handle_all(message):
     lower = text.lower()
     print(f"[MSG] From: {user_id} | Text: {text}")
 
-    # /myid
     if lower == "/myid":
         bot.reply_to(message, f"Your ID: `{user_id}`", parse_mode="Markdown")
         return
 
-    # /myaddress
     if lower == "/myaddress":
         if user_id != ADMIN_ID:
             bot.reply_to(message, "Only Admin.")
@@ -239,7 +231,6 @@ def handle_all(message):
         bot.reply_to(message, f"Wallet Address:\n`{addr}`", parse_mode="Markdown")
         return
 
-    # /balance
     if lower == "/balance":
         if user_id != ADMIN_ID:
             bot.reply_to(message, "Only Admin can use this.")
@@ -259,7 +250,6 @@ def handle_all(message):
             bot.reply_to(message, f"Check:\nhttps://tonviewer.com/{addr}")
         return
 
-    # /deploy — run this ONCE to activate wallet
     if lower == "/deploy":
         if user_id != ADMIN_ID:
             bot.reply_to(message, "Only Admin.")
@@ -271,18 +261,11 @@ def handle_all(message):
         bot.reply_to(message, "Deploying wallet...")
         result = deploy_wallet()
         if result.get("ok"):
-            bot.reply_to(
-                message,
-                "Wallet deployed! Wait 30 seconds then try /send again."
-            )
+            bot.reply_to(message, "Wallet deployed! Wait 30 seconds then try /send again.")
         else:
-            bot.reply_to(
-                message,
-                f"Deploy failed!\nReason: {result.get('error', 'Unknown')}"
-            )
+            bot.reply_to(message, f"Deploy failed!\nReason: {result.get('error', 'Unknown')}")
         return
 
-    # /send
     if lower.startswith("/send"):
         if user_id != ADMIN_ID:
             bot.reply_to(message, "Only Admin can send.")
