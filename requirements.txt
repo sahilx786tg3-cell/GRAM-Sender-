@@ -1,3 +1,4 @@
 pyTelegramBotAPI
-pytoniq
+tonsdk
+tvm_valuetypes
 requests
