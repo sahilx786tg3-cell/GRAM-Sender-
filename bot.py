@@ -4,7 +4,7 @@ import time
 import asyncio
 from pytoniq import LiteBalancer, WalletV4R2
 
-BOT_TOKEN = "8532448307:AAEkFjTBmGU_WdSY-lrEFi-zpHWBJvi_pWA"
+BOT_TOKEN = "8532448307:AAHnURBUFaBTPxvPT8W6h8rLw_kKGjgRTe4"
 MNEMONIC = "endless woman interest senior inner arrive educate stage talk throw useful sphere ranch urban list above plate join glare peace borrow buyer armed shift".split()
 ADMIN_ID = 6520878121
 WALLET_ADDRESS = "EQBs2e9qbnIwREgnRtjg1zLiMv9tlCQGzYZ7Eq66ChGMz3M-"
@@ -18,12 +18,30 @@ async def send_ton_async(to_address, amount_ton):
     await wallet.transfer(to_address, amount=int(amount_ton * 1e9), body="")
     await provider.close_all()
 
+def get_tx_hash():
+    try:
+        r = requests.get(
+            "https://toncenter.com/api/v2/getTransactions",
+            params={"address": WALLET_ADDRESS, "limit": 5},
+            timeout=10
+        ).json()
+        for tx in r.get("result", []):
+            if tx.get("out_msgs") and len(tx["out_msgs"]) > 0:
+                return tx["transaction_id"]["hash"]
+    except:
+        pass
+    return None
+
 def do_send(message, amount, to_address):
     status_msg = bot.reply_to(message, f"⏳ Sending {amount} TON...")
     try:
         asyncio.run(send_ton_async(to_address, amount))
-        time.sleep(10)
-        tx_url = f"https://tonviewer.com/{to_address}"
+        time.sleep(15)
+        tx_hash = get_tx_hash()
+        if tx_hash:
+            tx_url = f"https://tonviewer.com/transaction/{tx_hash}"
+        else:
+            tx_url = f"https://tonviewer.com/{WALLET_ADDRESS}"
         bot.edit_message_text(
             f"✅ {amount} TON Sent Successfully!\n\n"
             f"💰 Amount: {amount} TON\n"
@@ -54,7 +72,7 @@ def handle_all(message):
             return
         try:
             r = requests.get(
-                f"https://toncenter.com/api/v2/getAddressInformation",
+                "https://toncenter.com/api/v2/getAddressInformation",
                 params={"address": WALLET_ADDRESS},
                 timeout=10
             ).json()
