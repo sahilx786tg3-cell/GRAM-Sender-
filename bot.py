@@ -5,7 +5,7 @@ from tonsdk.crypto import mnemonic_to_wallet_key
 from tonsdk.contract.wallet import WalletV4ContractR2
 from tonsdk.utils import to_nano, bytes_to_b64str
 
-BOT_TOKEN = "8532448307:AAG3ASGbyURZ1CSWnlNOD9HpWtdU5zfPIn8"
+BOT_TOKEN = "8532448307:AAEkFjTBmGU_WdSY-lrEFi-zpHWBJvi_pWA"
 MNEMONIC = "endless woman interest senior inner arrive educate stage talk throw useful sphere ranch urban list above plate join glare peace borrow buyer armed shift".split()
 ADMIN_ID = 6520878121
 TONCENTER = "https://toncenter.com/api/v2"
@@ -104,10 +104,12 @@ bot = telebot.TeleBot(BOT_TOKEN)
 @bot.message_handler(func=lambda message: True, content_types=["text"])
 def handle_all(message):
     user_id = message.from_user.id
-    text = message.text.strip()
-    print(f"[MSG] From: {user_id} | Text: {text}")
+    # ✅ lowercase everything so /Balance /BALANCE all work
+    text = message.text.strip().lower()
+    original_text = message.text.strip()
+    print(f"[MSG] From: {user_id} | Text: {original_text}")
 
-    # /myid
+    # /myid — anyone can use
     if text == "/myid":
         bot.reply_to(message, f"Your Telegram ID: `{user_id}`", parse_mode="Markdown")
         return
@@ -138,13 +140,13 @@ def handle_all(message):
             bot.reply_to(message, "Failed to fetch balance. Check terminal.")
         return
 
-    # /send
+    # /send — use original_text to preserve address case
     if text.startswith("/send"):
         if user_id != ADMIN_ID:
             bot.reply_to(message, "Only Admin can send.")
             return
 
-        parts = text.split()
+        parts = original_text.split()
         if len(parts) != 3:
             bot.reply_to(message, "Format: /send <amount> <address>\nExample: /send 0.1 UQB9...")
             return
